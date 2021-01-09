@@ -84,7 +84,7 @@ def m_step(X, gamma):
     for c in range(gamma.shape[1]):
         num, den = 0, 0
         for i in range(gamma.shape[0]):
-            num += gamma[i, c]*np.matmul((X[i] - mu [c])[:, np.newaxis], (X[i] - mu [c])[:, np.newaxis].transpose())
+            num += gamma[i, c]*np.matmul((X[i] - mu[c])[:, np.newaxis], (X[i] - mu[c])[:, np.newaxis].transpose())
             den += gamma[i, c]
         sigma[c] = num / den
 
