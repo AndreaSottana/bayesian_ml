@@ -46,12 +46,12 @@ def e_step_optimized(x: np.ndarray, pi: np.ndarray, mu: np.ndarray, sigma: np.nd
     """
     assert pi.shape[0] == mu.shape[0] == sigma.shape[0], "Some shapes are incompatible"
     assert x.shape[1] == mu.shape[1] == sigma.shape[1] == sigma.shape[2], "Some shapes are incompatible"
-    N = x.shape[0]  # number of objects
-    C = pi.shape[0]  # number of clusters
 
-    gaussians = np.zeros((N, C))
-    for i in range(N):
-        gaussians[i] = np.einsum('ij,ij->i', (x[i] - mu), np.linalg.solve(sigma, x[i] - mu))
+    gaussians = np.einsum(
+        'ijkl, ijkl -> ij',
+        (x[:, np.newaxis, :] - mu)[:, :, :, np.newaxis],
+        np.linalg.solve(sigma, (x[:, np.newaxis, :] - mu)[:, :, :, np.newaxis])
+    )
     gaussians = gaussians - np.max(gaussians, axis=1)[:, np.newaxis]  # trick for numerical stability
     gaussians = np.exp(-0.5 * gaussians)
     weighted_gaussians = pi * gaussians / np.sqrt(np.linalg.det(sigma))
@@ -59,11 +59,11 @@ def e_step_optimized(x: np.ndarray, pi: np.ndarray, mu: np.ndarray, sigma: np.nd
     return gamma
 
 
-def m_step(X, gamma):
+def m_step(x, gamma):
     """
     Performs M-step on GMM model
     Each input is numpy array:
-    X: (N x d), data points
+    x: (N x d), data points
     gamma: (N x C), distribution q(T)
 
     Returns:
@@ -71,31 +71,31 @@ def m_step(X, gamma):
     mu: (C x d)
     sigma: (C x d x d)
     """
-    N = X.shape[0]  # number of objects
+    N = x.shape[0]  # number of objects
     C = gamma.shape[1]  # number of clusters
-    d = X.shape[1]  # dimension of each object
+    d = x.shape[1]  # dimension of each object
 
     pi = gamma.sum(axis=0) / N
     mu = np.zeros((C, d))
     for c in range(C):
-        mu[c] = np.dot(gamma[:, c], X)/gamma.sum(axis=0)[c]
+        mu[c] = np.dot(gamma[:, c], x) / gamma.sum(axis=0)[c]
 
     sigma = np.zeros((C, d, d))
     for c in range(gamma.shape[1]):
         num, den = 0, 0
         for i in range(gamma.shape[0]):
-            num += gamma[i, c]*np.matmul((X[i] - mu[c])[:, np.newaxis], (X[i] - mu[c])[:, np.newaxis].transpose())
+            num += gamma[i, c]*np.matmul((x[i] - mu[c])[:, np.newaxis], (x[i] - mu[c])[:, np.newaxis].transpose())
             den += gamma[i, c]
         sigma[c] = num / den
 
     return pi, mu, sigma
 
 
-def m_step_optimised(X, gamma):
+def m_step_optimised(x, gamma):
     """
     Performs M-step on GMM model
     Each input is numpy array:
-    X: (N x d), data points
+    x: (N x d), data points
     gamma: (N x C), distribution q(T)
 
     Returns:
@@ -103,24 +103,73 @@ def m_step_optimised(X, gamma):
     mu: (C x d)
     sigma: (C x d x d)
     """
-    N = X.shape[0]  # number of objects
-    C = gamma.shape[1]  # number of clusters
-    d = X.shape[1]  # dimension of each object
-
+    N = x.shape[0]
     pi = gamma.sum(axis=0) / N
 
-    mu = np.einsum('nc,nd->cd', gamma, X) / gamma.sum(axis=0)[:, np.newaxis]
+    mu = np.einsum('nc, nd -> cd', gamma, x) / gamma.sum(axis=0)[:, np.newaxis]
 
     matrix_term = np.matmul(
-        (X[:, np.newaxis, :] - mu)[:, :, :, np.newaxis],
-        (X[:, np.newaxis, :] - mu)[:, :, np.newaxis, :]  # transpose on last 2 terms, i.e. transpose(0, 1, 3, 2)
+        (x[:, np.newaxis, :] - mu)[:, :, :, np.newaxis],
+        (x[:, np.newaxis, :] - mu)[:, :, np.newaxis, :]  # transpose on last 2 terms, i.e. transpose(0, 1, 3, 2)
     )
     sigma = np.einsum(
-        'nc,ncab->ncab',
+        'nc, ncab -> ncab',
         gamma,
         matrix_term
     ).sum(axis=0) / gamma.sum(axis=0)[:, np.newaxis, np.newaxis]
     return pi, mu, sigma
+
+
+def compute_vlb(x, pi, mu, sigma, gamma):
+    """
+    Each input is numpy array:
+    x: (N x d), data points
+    gamma: (N x C), distribution q(T)
+    pi: (C)
+    mu: (C x d)
+    sigma: (C x d x d)
+
+    Returns value of variational lower bound
+    """
+    N = x.shape[0]
+    C = gamma.shape[1]
+    d = x.shape[1]
+
+    loss = 0
+    for i in range(N):
+        for c in range(C):
+            norm_coeff = (1 / np.sqrt(np.power(2 * np.pi, d) * np.linalg.det(sigma[c])))
+            gaussian_term = -0.5 * np.matmul(np.transpose(x[i] - mu[c]), np.linalg.solve(sigma[c], x[i] - mu[c]))
+            loss += gamma[i, c] * (np.log(pi[c]) + np.log(norm_coeff) + gaussian_term - np.log(gamma[i, c]))
+            # for numerical stability, the np.log(np.exp(gaussian)) has been simply written as gaussian
+
+    return loss
+
+
+def compute_vlb_optimised(x, pi, mu, sigma, gamma):
+    """
+    Each input is numpy array:
+    x: (N x d), data points
+    gamma: (N x C), distribution q(T)
+    pi: (C)
+    mu: (C x d)
+    sigma: (C x d x d)
+
+    Returns value of variational lower bound
+    """
+
+    d = x.shape[1]
+
+    norm_coeff = (1 / np.sqrt(np.power(2 * np.pi, d) * np.linalg.det(sigma)))
+    gaussian_terms = - 0.5 * np.einsum(
+        'ijkl, ijkl -> ij',
+        (x[:, np.newaxis, :] - mu)[:, :, :, np.newaxis],
+        np.linalg.solve(sigma, (x[:, np.newaxis, :] - mu)[:, :, :, np.newaxis])
+    )
+    loss = (gamma * (np.log(pi) + np.log(norm_coeff) + gaussian_terms - np.log(gamma))).sum()
+    # for numerical stability, the np.log(np.exp(gaussian)) has been simply written as gaussian
+
+    return loss
 
 
 if __name__ == '__main__':
@@ -137,3 +186,6 @@ if __name__ == '__main__':
     np.testing.assert_allclose(pi_, pi_optimised)
     np.testing.assert_allclose(mu_, mu_optimised)
     np.testing.assert_allclose(sigma_, sigma_optimised)
+    loss_ = compute_vlb(X_, pi_, mu_, sigma_, gamma_)
+    loss_optimised = compute_vlb_optimised(X_, pi_optimised, mu_optimised, sigma_optimised, gamma_optimised)
+    np.testing.assert_allclose(loss_, loss_optimised)
