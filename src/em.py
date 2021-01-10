@@ -166,13 +166,14 @@ def compute_vlb_optimized(x, pi, mu, sigma, gamma):
         (x[:, np.newaxis, :] - mu)[:, :, :, np.newaxis],
         np.linalg.solve(sigma, (x[:, np.newaxis, :] - mu)[:, :, :, np.newaxis])
     )
-    loss = (gamma * (np.log(pi) + np.log(norm_coeff) + gaussian_terms - np.log(gamma))).sum()
-    # for numerical stability, the np.log(np.exp(gaussian)) has been simply written as gaussian
+    loss = (gamma * (np.log(pi+1e-20) + np.log(norm_coeff+1e-20) + gaussian_terms - np.log(gamma+1e-20))).sum()
+    # for numerical stability, the np.log(np.exp(gaussian)) has been simply written as gaussian and other
+    # terms had 1e-20 added to them to prevent np.log(0).
 
     return loss
 
 
-def train_EM(X, C, rtol=1e-3, max_iter=100, restarts=10):
+def train_em(X, C, rtol=1e-3, max_iter=100, restarts=10):
     '''
     Starts with random initialization *restarts* times
     Runs optimization until saturation with *rtol* reached
@@ -183,21 +184,16 @@ def train_EM(X, C, rtol=1e-3, max_iter=100, restarts=10):
     '''
     N = X.shape[0]  # number of objects
     d = X.shape[1]  # dimension of each object
-    best_loss = None
-    best_pi = None
-    best_mu = None
-    best_sigma = None
 
     losses, pis, mus, sigmas = [], [], [], []
     for _ in range(restarts):
         try:
-            pi = np.random.rand(C)
+            pi = np.random.uniform(low=0.0, high=1.0, size=C)
             pi = pi / pi.sum()  # normalisation
-            mu = np.random.rand(C, d)
+            mu = np.random.uniform(low=0.0, high=1.0, size=(C, d))
             sigma = np.repeat(np.eye(d)[np.newaxis, :, :], repeats=C, axis=0)
             losses = []
             for iter_ in range(max_iter):
-                # print(pi)
                 gamma = e_step_optimized(X, pi, mu, sigma)
                 pi, mu, sigma = m_step_optimized(X, gamma)
                 loss = compute_vlb_optimized(X, pi, mu, sigma, gamma)
@@ -226,26 +222,50 @@ def train_EM(X, C, rtol=1e-3, max_iter=100, restarts=10):
     best_mu = mus[best_restart_index]
     best_sigma = sigmas[best_restart_index]
 
-    # return losses, pis, mus, sigmas
-
     return best_loss, best_pi, best_mu, best_sigma
 
 
-if __name__ == '__main__':
-    samples = np.load('../data/samples.npz')
-    X_ = samples['data']
-    pi0_ = samples['pi0']
-    mu0_ = samples['mu0']
-    sigma0_ = samples['sigma0']
-    gamma_ = e_step(X_, pi0_, mu0_, sigma0_)
-    gamma_optimised = e_step_optimized(X_, pi0_, mu0_, sigma0_)
-    np.testing.assert_allclose(gamma_, gamma_optimised)
-    pi_, mu_, sigma_ = m_step(X_, gamma_)
-    pi_optimised, mu_optimised, sigma_optimised = m_step_optimized(X_, gamma_optimised)
-    np.testing.assert_allclose(pi_, pi_optimised)
-    np.testing.assert_allclose(mu_, mu_optimised)
-    np.testing.assert_allclose(sigma_, sigma_optimised)
-    loss_ = compute_vlb(X_, pi_, mu_, sigma_, gamma_)
-    loss_optimised = compute_vlb_optimized(X_, pi_optimised, mu_optimised, sigma_optimised, gamma_optimised)
-    np.testing.assert_allclose(loss_, loss_optimised)
-    np.identity
+def train_EM(X, C, rtol=1e-3, max_iter=100, restarts=10):
+    '''
+    Starts with random initialization *restarts* times
+    Runs optimization until saturation with *rtol* reached
+    or *max_iter* iterations were made.
+
+    X: (N, d), data points
+    C: int, number of clusters
+    '''
+    N = X.shape[0]  # number of objects
+    d = X.shape[1]  # dimension of each object
+    best_loss = None
+    best_pi = None
+    best_mu = None
+    best_sigma = None
+
+    for _ in range(restarts):
+        try:
+            pi = np.random.uniform(low=0.0, high=1.0, size=C)
+            pi = pi / pi.sum()  # normalisation
+            mu = np.random.uniform(low=0.0, high=1.0, size=(C, d))
+            sigma = np.repeat(np.eye(d)[np.newaxis, :, :], repeats=C, axis=0)
+            loss = -1e4  # set to initial very high value so it can not increase from here
+            for iter_ in range(max_iter):
+                gamma = e_step_optimized(X, pi, mu, sigma)
+                pi, mu, sigma = m_step_optimized(X, gamma)
+                current_loss = compute_vlb_optimized(X, pi, mu, sigma, gamma)
+                if current_loss < loss:
+                    raise ValueError("The vlb loss is increasing, there is a bug somewhere!")
+                if iter_ > 0 and np.abs((current_loss - loss) / loss) <= rtol:
+                    print(f"Reached convergence in {iter_} iterations out ot {max_iter}")
+                    break
+                loss = current_loss
+            if best_loss is None or loss < best_loss:
+                best_loss = loss
+                best_pi = np.copy(pi)
+                best_mu = np.copy(mu)
+                best_sigma = np.copy(sigma)
+
+        except np.linalg.LinAlgError:
+            print("Singular matrix: components collapsed")
+            pass
+
+    return best_loss, best_pi, best_mu, best_sigma
