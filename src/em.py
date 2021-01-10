@@ -173,69 +173,16 @@ def compute_vlb_optimized(x, pi, mu, sigma, gamma):
     return loss
 
 
-def train_em(X, C, rtol=1e-3, max_iter=100, restarts=10):
-    '''
+def train_em(X, C, rtol=1e-3, max_iter=100, restarts=10, mu_search_space=(0.0, 1.0)):
+    """
     Starts with random initialization *restarts* times
     Runs optimization until saturation with *rtol* reached
     or *max_iter* iterations were made.
 
     X: (N, d), data points
     C: int, number of clusters
-    '''
-    N = X.shape[0]  # number of objects
-    d = X.shape[1]  # dimension of each object
-
-    losses, pis, mus, sigmas = [], [], [], []
-    for _ in range(restarts):
-        try:
-            pi = np.random.uniform(low=0.0, high=1.0, size=C)
-            pi = pi / pi.sum()  # normalisation
-            mu = np.random.uniform(low=0.0, high=1.0, size=(C, d))
-            sigma = np.repeat(np.eye(d)[np.newaxis, :, :], repeats=C, axis=0)
-            losses = []
-            for iter_ in range(max_iter):
-                gamma = e_step_optimized(X, pi, mu, sigma)
-                pi, mu, sigma = m_step_optimized(X, gamma)
-                loss = compute_vlb_optimized(X, pi, mu, sigma, gamma)
-                losses.append(loss)
-                if iter_ > 0 and loss < losses[iter_ - 1]:
-                    raise ValueError("The vlb loss is increasing, there is a bug somewhere!")
-                if iter_ > 0 and np.abs((loss - losses[iter_ - 1]) / losses[iter_ - 1]) <= rtol:
-                    losses.append(loss)
-                    pis.append(pi)
-                    mus.append(mu)
-                    sigmas.append(sigma)
-                    print(f"Reached convergence in {iter_} iterations out ot {max_iter}")
-                    break
-            losses.append(loss)
-            pis.append(pi)
-            mus.append(mu)
-            sigmas.append(sigma)
-
-        except np.linalg.LinAlgError:
-            print("Singular matrix: components collapsed")
-            pass
-
-    best_restart_index = np.argmin(losses)
-    best_loss = losses[best_restart_index]
-    best_pi = pis[best_restart_index]
-    best_mu = mus[best_restart_index]
-    best_sigma = sigmas[best_restart_index]
-
-    return best_loss, best_pi, best_mu, best_sigma
-
-
-def train_EM(X, C, rtol=1e-3, max_iter=100, restarts=10):
-    '''
-    Starts with random initialization *restarts* times
-    Runs optimization until saturation with *rtol* reached
-    or *max_iter* iterations were made.
-
-    X: (N, d), data points
-    C: int, number of clusters
-    '''
-    N = X.shape[0]  # number of objects
-    d = X.shape[1]  # dimension of each object
+    """
+    d = X.shape[1]
     best_loss = None
     best_pi = None
     best_mu = None
@@ -245,24 +192,24 @@ def train_EM(X, C, rtol=1e-3, max_iter=100, restarts=10):
         try:
             pi = np.random.uniform(low=0.0, high=1.0, size=C)
             pi = pi / pi.sum()  # normalisation
-            mu = np.random.uniform(low=0.0, high=1.0, size=(C, d))
+            mu = np.random.uniform(low=mu_search_space[0], high=mu_search_space[1], size=(C, d))
             sigma = np.repeat(np.eye(d)[np.newaxis, :, :], repeats=C, axis=0)
-            loss = -1e4  # set to initial very high value so it can not increase from here
+            loss = None
             for iter_ in range(max_iter):
                 gamma = e_step_optimized(X, pi, mu, sigma)
                 pi, mu, sigma = m_step_optimized(X, gamma)
                 current_loss = compute_vlb_optimized(X, pi, mu, sigma, gamma)
-                if current_loss < loss:
+                if loss is not None and current_loss < loss:
                     raise ValueError("The vlb loss is increasing, there is a bug somewhere!")
                 if iter_ > 0 and np.abs((current_loss - loss) / loss) <= rtol:
                     print(f"Reached convergence in {iter_} iterations out ot {max_iter}")
                     break
                 loss = current_loss
-            if best_loss is None or loss < best_loss:
+            if best_loss is None or loss > best_loss:
                 best_loss = loss
-                best_pi = np.copy(pi)
-                best_mu = np.copy(mu)
-                best_sigma = np.copy(sigma)
+                best_pi = pi
+                best_mu = mu
+                best_sigma = sigma
 
         except np.linalg.LinAlgError:
             print("Singular matrix: components collapsed")

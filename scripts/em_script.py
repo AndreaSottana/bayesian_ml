@@ -20,7 +20,7 @@ if __name__ == '__main__':
     loss_ = compute_vlb(X_, pi_, mu_, sigma_, gamma_)
     loss_optimised = compute_vlb_optimized(X_, pi_optimised, mu_optimised, sigma_optimised, gamma_optimised)
     np.testing.assert_allclose(loss_, loss_optimised)
-    best_loss, best_pi, best_mu, best_sigma = train_EM(X_, C=3)
+    best_loss, best_pi, best_mu, best_sigma = train_em(X_, C=3)
     gamma = e_step_optimized(X_, best_pi, best_mu, best_sigma)
     labels = gamma.argmax(axis=1)
     colors = np.array([(31, 119, 180), (255, 127, 14), (44, 160, 44)]) / 255.
