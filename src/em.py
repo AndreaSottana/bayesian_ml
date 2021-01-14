@@ -2,32 +2,40 @@ import numpy as np
 
 
 class EM:
-    def __init__(self, x):
+    """
+    Class to perform probabilistic clustering of a set of N d-dimensional point assuming such points are generated
+    from a Gaussian Mixture Model. The optimization is done via the expectation-maximization algorithm, a coordinate
+    descent optimization of a variational lower bound.
+    """
+    def __init__(self, x: np.ndarray) -> None:
+        """
+        :param x: (N x d), the input data points
+        """
         self.x = x
         self.pi = None
         self.mu = None
         self.sigma = None
         self.gamma = None
 
-    def _e_step(self, pi, mu, sigma) -> np.ndarray:
+    def _e_step(self, pi: np.ndarray, mu: np.ndarray, sigma: np.ndarray) -> np.ndarray:
         """
-        Performs the E-step (expectation step) on the Gaussian Mixture Model (GMM).
-        Each input is numpy array. Shapes are presented below, where
+        Performs the E-step (expectation step) on the Gaussian Mixture Model (GMM). This step estimates the posterior
+        distribution gamma over the latent variables (i.e. the Gaussians) with fixed values of parameters pi, mu and
+        sigma. Each input is a numpy array. Shapes are presented below, where
         - N: number of data points
         - d: number of dimensions
         - C: number of latent variables (i.e. for GMM, number of Gaussians, or number of clusters)
 
-        The method is optimised for performance due to
-        broadcasting for speed and other tricks to improve numerical stability when calculating large / small numbers.
-        Some common factors, e.g. 1 / np.sqrt(np.power(2 * np.pi, d) have also been removed as they would be
-        cancelled out in normalization operations.
-        :param x: (N x d), input data points
-        :param pi: (C), mixture component weights
+        The method is optimised for performance due to broadcasting for speed and includes other tricks to improve
+        numerical stability when calculating very large / small numbers. Some common factors in the formula,
+        e.g. 1 / np.sqrt(np.power(2 * np.pi, d) have also been removed as they would be cancelled out in normalization
+        operations.
+        :param pi: (C), mixture component weights. They must be normalized, i.e. pi.sum() == 1.
         :param mu: (C x d), mixture component means
         :param sigma: (C x d x d), mixture component covariance matrices
-        :return: gamma: (N x C), probabilities of clusters for objects; each component along axis = 0 [0, N-1] represents
-                 a point, each component along axis = 1 [0, C-1] represent the probability of that point belonging to
-                 cluster c={0, 1, ..., C-2, C-1}
+        :return: gamma: (N x C), probabilities of clusters for objects; each component along axis = 0 [0, N-1]
+                 represents a point, each component along axis = 1 [0, C-1] represent the probability of that point
+                 belonging to cluster c={0, 1, ..., C-2, C-1}
         """
 
         gaussians = np.einsum(
@@ -41,17 +49,21 @@ class EM:
         gamma = weighted_gaussians / np.sum(weighted_gaussians, axis=1)[:, np.newaxis]
         return gamma
 
-    def _m_step(self, gamma):
+    def _m_step(self, gamma: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Performs M-step on GMM model
-        Each input is numpy array:
+        Performs the M-step (maximization step) on the Gaussian Mixture Model (GMM). This step maximises the expectation
+        value, with respect to the posterior, of the likelihood, over the parameters pi, mu and sigma, while the
+        posterior gamma is kept fixed. Usually, the logarithm is taken before optimizing the function, because it is
+        easier to optimize and doesn't change the results.
+        Each input is a numpy array:
         x: (N x d), data points
         gamma: (N x C), distribution q(T)
 
-        Returns:
-        pi: (C)
-        mu: (C x d)
-        sigma: (C x d x d)
+        :param gamma: (N x C), the posterior distribution over the latent variables q(T). N is the number of data points
+               and C the number of latent variables (i.e. for GMM, number of Gaussians, or number of clusters)
+        :return: pi: (C), mixture component weights. They must be normalized, i.e. pi.sum() == 1.
+                 mu: (C x d), mixture component means
+                 sigma: (C x d x d), mixture component covariance matrices
         """
         N = self.x.shape[0]
         pi = gamma.sum(axis=0) / N
@@ -69,9 +81,11 @@ class EM:
         ).sum(axis=0) / gamma.sum(axis=0)[:, np.newaxis, np.newaxis]
         return pi, mu, sigma
 
-    def _compute_vlb(self, pi, mu, sigma, gamma):
+    def _compute_vlb(self, pi: np.ndarray, mu: np.ndarray, sigma: np.ndarray, gamma: np.ndarray) -> int:
         """
-        Each input is numpy array:
+        Computes the value of the variational lower bound, which represents our loss function.
+        ### DOCSTRING TO BE FINISHED
+        Each input is a numpy array:
         x: (N x d), data points
         gamma: (N x C), distribution q(T)
         pi: (C)
