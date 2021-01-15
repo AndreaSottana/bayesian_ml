@@ -1,4 +1,9 @@
+import logging
+from typing import Union
 import numpy as np
+
+
+logger = logging.getLogger(__name__)
 
 
 class EM:
@@ -12,6 +17,7 @@ class EM:
         :param x: (N x d), the input data points
         """
         self.x = x
+        # the parameters below will be lazily initialized when first fitting a dataset with the fit method.
         self.pi = None
         self.mu = None
         self.sigma = None
@@ -35,7 +41,8 @@ class EM:
         :param sigma: (C x d x d), mixture component covariance matrices
         :return: gamma: (N x C), probabilities of clusters for objects; each component along axis = 0 [0, N-1]
                  represents a point, each component along axis = 1 [0, C-1] represent the probability of that point
-                 belonging to cluster c={0, 1, ..., C-2, C-1}
+                 belonging to cluster c={0, 1, ..., C-2, C-1}. This is the the posterior distribution over the latent
+                 variables.
         """
 
         gaussians = np.einsum(
@@ -55,12 +62,15 @@ class EM:
         value, with respect to the posterior, of the likelihood, over the parameters pi, mu and sigma, while the
         posterior gamma is kept fixed. Usually, the logarithm is taken before optimizing the function, because it is
         easier to optimize and doesn't change the results.
-        Each input is a numpy array:
-        x: (N x d), data points
-        gamma: (N x C), distribution q(T)
+        Each input is a numpy array. Shapes are presented below, where
+        - N: number of data points
+        - d: number of dimensions
+        - C: number of latent variables (i.e. for GMM, number of Gaussians, or number of clusters)
 
-        :param gamma: (N x C), the posterior distribution over the latent variables q(T). N is the number of data points
-               and C the number of latent variables (i.e. for GMM, number of Gaussians, or number of clusters)
+        :param gamma: (N x C), probabilities of clusters for objects; each component along axis = 0 [0, N-1]
+               represents a point, each component along axis = 1 [0, C-1] represent the probability of that point
+               belonging to cluster c={0, 1, ..., C-2, C-1}. This is the the posterior distribution over the latent
+               variables.
         :return: pi: (C), mixture component weights. They must be normalized, i.e. pi.sum() == 1.
                  mu: (C x d), mixture component means
                  sigma: (C x d x d), mixture component covariance matrices
@@ -83,16 +93,19 @@ class EM:
 
     def _compute_vlb(self, pi: np.ndarray, mu: np.ndarray, sigma: np.ndarray, gamma: np.ndarray) -> int:
         """
-        Computes the value of the variational lower bound, which represents our loss function.
-        ### DOCSTRING TO BE FINISHED
-        Each input is a numpy array:
-        x: (N x d), data points
-        gamma: (N x C), distribution q(T)
-        pi: (C)
-        mu: (C x d)
-        sigma: (C x d x d)
+        Computes the value of the variational lower bound, which represents our loss function. This is the value we
+        are trying to optimize and which is used to track convergence.
+        Each input is a numpy array. Shapes are presented below, where
+        - N: number of data points
+        - d: number of dimensions
+        - C: number of latent variables (i.e. for GMM, number of Gaussians, or number of clusters)
 
-        Returns value of variational lower bound
+        :param pi: (C), mixture component weights. They must be normalized, i.e. pi.sum() == 1.
+        :param mu: (C x d), mixture component means
+        :param sigma: (C x d x d), mixture component covariance matrices
+        :param gamma: (N x C), the posterior distribution over the latent variables q(T). N is the number of data points
+               and C the number of latent variables (i.e. for GMM, number of Gaussians, or number of clusters)
+        :return: loss: the value of the variational lower bound.
         """
 
         d = self.x.shape[1]
@@ -110,14 +123,26 @@ class EM:
 
         return loss
 
-    def fit(self, C, rtol=1e-3, max_iter=100, restarts=10, mu_search_space=(0.0, 1.0)):
+    def fit(
+            self, C, rtol=1e-3, max_iter=100, restarts=10, mu_search_space=(0.0, 1.0)
+    ) -> int:
         """
-        Starts with random initialization *restarts* times
-        Runs optimization until saturation with *rtol* reached
-        or *max_iter* iterations were made.
-
-        x: (N, d), data points
-        C: int, number of clusters
+        Implements the training loop for solving the Gaussian Mixture Model using the expectation-maximization
+        algorithm. The training is re-initialized with random initialization a number of times, and the values
+        returning the best (i.e. lowest in absolute value) variational lower bound loss is retained. Each restart
+        is run until either saturation is reached, or a maximum number of epochs is reached.
+        :param C: number of latent variables (i.e. for GMM, number of Gaussians, or number of clusters)
+        :param rtol: the tolerance. The model will continue training until saturation, i.e. until
+               abs((L{i} - L{i-1}) / L{i-1}) <= rtol, or until a maximum number of iterations is reached.
+               L{i} is the loss at iteration i. Default: 1e-3
+        :param max_iter: The maximum number of iterations, per each restart. If this value is reached before
+               convergence / saturation, the training will stop regardless. Default: 100
+        :param restarts: The number of restarts with randomly re-initialised parameters. The values generated by the
+               restart with the lowest absolute loss will then be retained. Default: 10
+        :param mu_search_space: a tuple of floats representing the search space for each dimension / component of the
+               means of the latent Gaussian curves. Syntax: (min, max). Each dimension / component of the mean of each
+               latent Gaussian will be uniformly randomly sampled within this range. Default: (0.0, 1.0)
+        :return: best_loss: the final value of the loss from the best restart.
         """
         d = self.x.shape[1]
         best_loss = None
@@ -136,7 +161,7 @@ class EM:
                     if loss is not None and current_loss < loss:
                         raise ValueError("The vlb loss is increasing, there is a bug somewhere!")
                     if iter_ > 0 and np.abs((current_loss - loss) / loss) <= rtol:
-                        print(f"Reached convergence in {iter_} iterations out ot {max_iter}")
+                        logger.info(f"Reached convergence in {iter_} iterations out ot {max_iter}")
                         break
                     loss = current_loss
                 if best_loss is None or loss > best_loss:
@@ -147,16 +172,56 @@ class EM:
                     self.gamma = gamma
 
             except np.linalg.LinAlgError:
-                print("Singular matrix: components collapsed")
+                logger.warning("Singular matrix: components collapsed! Skipping this run.")
                 pass
-        return best_loss, self.pi, self.mu, self.sigma
+        return best_loss
 
-    def transform(self):
+    def transform(self) -> np.ndarray:
+        """
+        Perform the probabilistic predictions on the dataset. Each point is assigned a probability to it belonging
+        to each of the C latent variables (i.e. Gaussians) learned during training. You need to train the model
+        first by calling .fit(...) before performing predictions, or else an exception will be raised.
+        :return: gamma: (N x C), the posterior distribution over the latent variables q(T). N is the number of data
+                 points and C the number of latent variables (i.e. for GMM, number of Gaussians, or number of clusters),
+                 N is the number of data points, while C is the number of latent variables (i.e. for GMM, number of
+                 Gaussians, or number of clusters)
+        """
         try:
             return self._e_step(self.pi, self.mu, self.sigma)
         except TypeError:
             raise Exception("EM has not been trained, you must train with .fit before applying .transform")
 
-    def fit_transform(self, C, rtol=1e-3, max_iter=100, restarts=10, mu_search_space=(0.0, 1.0)):
-        self.fit(C, rtol=rtol, max_iter=max_iter, restarts=restarts, mu_search_space=mu_search_space)
-        return self._e_step(self.pi, self.mu, self.sigma)
+    def fit_transform(
+            self, C, rtol=1e-3, max_iter=100, restarts=10, mu_search_space=(0.0, 1.0), return_loss: bool = False
+    ) -> Union[np.ndarray, tuple[np.ndarray, int]]:
+        """
+        Combines the fit and transform methods into one single method.
+        First, it implements the training loop for solving the Gaussian Mixture Model using the expectation-maximization
+        algorithm. The training is re-initialized with random initialization a number of times, and the values
+        returning the best (i.e. lowest in absolute value) variational lower bound loss is retained. Each restart
+        is run until either saturation is reached, or a maximum number of epochs is reached. Then, the probabilistic
+        predictions on the dataset are performed. Each point is assigned a probability to it belonging
+        to each of the C latent variables (i.e. Gaussians) learned during training.
+        :param C: number of latent variables (i.e. for GMM, number of Gaussians, or number of clusters)
+        :param rtol: the tolerance. The model will continue training until saturation, i.e. until
+               abs((L{i} - L{i-1}) / L{i-1}) <= rtol, or until a maximum number of iterations is reached.
+               L{i} is the loss at iteration i. Default: 1e-3
+        :param max_iter: The maximum number of iterations, per each restart. If this value is reached before
+               convergence / saturation, the training will stop regardless. Default: 100
+        :param restarts: The number of restarts with randomly re-initialised parameters. The values generated by the
+               restart with the lowest absolute loss will then be retained. Default: 10
+        :param mu_search_space: a tuple of floats representing the search space for each dimension / component of the
+               means of the latent Gaussian curves. Syntax: (min, max). Each dimension / component of the mean of each
+               latent Gaussian will be uniformly randomly sampled within this range. Default: (0.0, 1.0)
+        :param return_loss: whether to return the final value of the loss from the best training restart. Default: False
+        :return: gamma: (N x C), the posterior distribution over the latent variables q(T). N is the number of data
+                 points and C the number of latent variables (i.e. for GMM, number of Gaussians, or number of clusters),
+                 N is the number of data points, while C is the number of latent variables (i.e. for GMM, number of
+                 Gaussians, or number of clusters)
+        """
+        best_loss = self.fit(C, rtol=rtol, max_iter=max_iter, restarts=restarts, mu_search_space=mu_search_space)
+        gamma = self._e_step(self.pi, self.mu, self.sigma)
+        if return_loss:
+            return gamma, best_loss
+        else:
+            return gamma

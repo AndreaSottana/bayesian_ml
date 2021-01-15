@@ -18,7 +18,7 @@ if __name__ == '__main__':
     # print(sigma)
     # loss = em._compute_vlb(pi, mu, sigma, gamma)
     em.fit(C=3)
-    labels = em.gamma.argmax(axis=1)
+    labels = em.transform().argmax(axis=1)
     colors = np.array([(31, 119, 180), (255, 127, 14), (44, 160, 44)]) / 255.
     plt.scatter(em.x[:, 0], em.x[:, 1], c=colors[labels], s=30)
     plt.axis('equal')
