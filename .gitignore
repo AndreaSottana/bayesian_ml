@@ -8,7 +8,7 @@ __pycache__/
 # miscellaneous
 .DS_Store
 .idea/
-notebooks/
+notebooks_checkpoints/
 
 # Distribution / packaging
 .Python
