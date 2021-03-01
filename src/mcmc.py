@@ -74,7 +74,7 @@ class BayesianLogisticRegression:
             )
             return self.map_estimate, self.trace
 
-    def plot_traces(self, burnin: int = 200):
+    def plot_traces(self, burnin: int = 200, show_plot: bool = False):
         """
         Convenience function to plot the traces with overlaid means and values.
         :param burnin: the number of initial steps to discard. This is so to enable the samples to be representatives
@@ -100,6 +100,8 @@ class BayesianLogisticRegression:
                         '{:.2f}'.format(mn), xy=(mn, 0), xycoords='data', xytext=(5, 10), textcoords='offset points',
                         rotation=90, va='bottom', fontsize='large', color='#AA0022'
                     )
+                if show_plot:
+                    plt.show()
                 return ax
 
     def plot_odds_ratio_hist(self, variable, burnin: int = 200, bins: int = 20, show_plot: bool = False):
@@ -112,6 +114,7 @@ class BayesianLogisticRegression:
             b = self.trace[variable][burnin:]
             plt.hist(np.exp(b), bins=bins)
             plt.xlabel("Odds Ratio")
+            plt.title(variable)
             if show_plot:
                 plt.show()
             return plt
