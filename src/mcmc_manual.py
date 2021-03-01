@@ -50,7 +50,7 @@ class BayesianLogisticRegressionManual:
                 if param == 'a':
                     sum_ *= param_value
                 else:
-                    sum_  += self.data[input_].values * param_value
+                    sum_ += self.data[input_].values * param_value
 
             logits = pm.invlogit(sum_)
 
