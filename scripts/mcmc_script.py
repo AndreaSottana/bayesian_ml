@@ -1,6 +1,5 @@
 import pandas as pd
 from src.mcmc import BayesianLogisticRegression
-from src.mcmc_manual import BayesianLogisticRegressionManual
 
 
 if __name__ == '__main__':
@@ -9,9 +8,7 @@ if __name__ == '__main__':
     map_, trace = lr.find_map_and_sample(draws=2)
     print(map_, trace)
     lr.plot_traces()
-    lr.plot_odds_ratio_hist('sex[T. Male]')
+    lb, up = lr.get_confidence_interval('sex[T. Male]', min_percentile=2.5, max_percentile=97.5)
+    print(f"We are 95% confident that the correlation between gender and income is between {lb} and {up}.")
     lr.plot_traces(show_plot=True)
     lr.plot_odds_ratio_hist('sex[T. Male]', show_plot=True)
-
-    lr = BayesianLogisticRegressionManual(df, output='income_more_50K', inputs=['age', 'educ'])
-    print(lr.find_map_manual(mus=[0, 0, 0], sigmas=[100, 100, 100]))

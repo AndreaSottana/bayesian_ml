@@ -19,7 +19,7 @@ class BayesianLogisticRegression:
         """
         :param data: a pd.DataFrame, or dictionary, containing the data to be used. If a dictionary, all values must
                be lists of the same length.
-        :param output: tje name of the output to be calculated
+        :param output: the name of the output to be calculated
         :param inputs: the values contributing to the formula. A linear formula will be used, so if you need to sqaure
                a value you should square it here. E.g. for a formula 'income ~ sex + age**2 + educ + hours', you
                should set 'income' as your output and ['sex', 'age**2', 'educ', 'hours'] as your input.
@@ -43,7 +43,7 @@ class BayesianLogisticRegression:
             draws: int = 400,
             init: str = 'map',  # set to 'auto' for best results
             return_inferencedata: bool = True
-    ):
+    ) -> tuple[dict[str, np.ndarray], pm.backends.base.MultiTrace]:
         """
         Computes the maximum a posteriori estimate and successively and performs NUTS sampling.
         :param family:
@@ -58,7 +58,10 @@ class BayesianLogisticRegression:
         :param init: the initialisation, eg. 'map' or 'auto', passed onto pymc3.sample. Default: 'map.
         :param return_inferencedata: Whether to return the trace as an :class:`arviz:arviz.InferenceData` (True)
                object or a `MultiTrace` (False). Default: True
-        :return:
+        :return: self.map_estimate: updates, and returns the maximum a posteriori (MAP) estimate for each parameter in
+                 self.inputs, and also including the 'Intercept'. A dictionary where eahc value is a scalar np.ndarray
+                 self.trace: updates, and returns the pymc3.backends.base.MultiTraceraw object containing the samples
+                 from the MAP posterior distribution previously calculated, using the NUTS step methods.
         """
         with pm.Model():
             pm.glm.GLM.from_formula(
@@ -74,12 +77,46 @@ class BayesianLogisticRegression:
             )
             return self.map_estimate, self.trace
 
-    def plot_traces(self, burnin: int = 200, show_plot: bool = False):
+    def get_confidence_interval(
+            self, variable: str, min_percentile: float, max_percentile: float, burnin: int = 200
+    ) -> Optional[tuple[float, float]]:
+        """
+        Calculates the confidence interval of a given variable, within the minimum and maximum percentile given. For
+        example, if you want to know the possible value of a variable with 95% confidence, you would set
+        min_percentile == 2.5 and max_percentile == 97.5. The function will then return the lower and upper bounds of
+        the values for the given variable, so you can have 95% confidence that the value of the variable falls within
+        the returned upper and lower bounds.
+        :param variable: the variable whose confidence interval is to be calculated
+        :param min_percentile: the minimum percentile
+        :param max_percentile:the maximum percentile
+        :param burnin: the number of initial steps to discard from the trace, i.e. the points samples from the
+               distribution. This is so to enable the samples to be representatives of the distributions to be
+               approximated and prevent the random starting point from spoiling the data too much.
+        :return: lower_bound: the lowest possible value of the variable consistent with your given min_percentile
+                 upper_bound: the highest possible value of the variable consistent with your given max_percentile
+        """
+        if self.trace is None:
+            logger.warning(
+                "trace has not yet been created. Call find_map_and_sample before attempting to calculate "
+                "the confidence interval"
+            )
+            return None
+        else:
+            assert min_percentile < max_percentile, 'min_percentile must be smaller than max_percentile'
+            assert 0 <= min_percentile <= 100, f'min_percentile must be between 0 and 100, got {min_percentile} instead'
+            assert 0 <= max_percentile <= 100, f'max_percentile must be between 0 and 100, got {max_percentile} instead'
+            b = self.trace[variable][burnin:]
+            lower_bound, upper_bound = np.percentile(b, min_percentile), np.percentile(b, max_percentile)
+            return lower_bound, upper_bound
+
+    def plot_traces(self, burnin: int = 200, show_plot: bool = False) -> Optional[plt]:
         """
         Convenience function to plot the traces with overlaid means and values.
         :param burnin: the number of initial steps to discard. This is so to enable the samples to be representatives
                of the distributions to be approximated and prevent the random starting point from spoiling the data
                too much.
+        :param show_plot: whether to display the plot. Default: False.
+        :return: plt: the updated matplotlib.pyplot status
         """
         if self.trace is None:
             logger.warning(
@@ -102,9 +139,21 @@ class BayesianLogisticRegression:
                     )
                 if show_plot:
                     plt.show()
-                return ax
+                return plt
 
-    def plot_odds_ratio_hist(self, variable, burnin: int = 200, bins: int = 20, show_plot: bool = False):
+    def plot_odds_ratio_hist(
+            self, variable: str, burnin: int = 200, bins: int = 20, show_plot: bool = False
+    ) -> Optional[plt]:
+        """
+        Convenience function to plot the histogram of the odds ratio for any given variable.
+        :param variable: the variable to be plotted
+        :param burnin: the number of initial steps to discard. This is so to enable the samples to be representatives
+               of the distributions to be approximated and prevent the random starting point from spoiling the data
+               too much.
+        :param bins: the number of bins of the histogram
+        :param show_plot: whether to display the plot. Default: False.
+        :return: plt: the updated matplotlib.pyplot status
+        """
         if self.trace is None:
             logger.warning(
                 "trace has not yet been created. Call find_map_and_sample before attempting to plot the trace"
@@ -114,7 +163,7 @@ class BayesianLogisticRegression:
             b = self.trace[variable][burnin:]
             plt.hist(np.exp(b), bins=bins)
             plt.xlabel("Odds Ratio")
-            plt.title(variable)
+            plt.title(f'Variable: {variable}')
             if show_plot:
                 plt.show()
             return plt
