@@ -9,6 +9,8 @@ __pycache__/
 .DS_Store
 .idea/
 notebooks_checkpoints/
+GPy/
+
 
 # Distribution / packaging
 .Python
