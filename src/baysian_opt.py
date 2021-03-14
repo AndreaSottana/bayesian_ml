@@ -3,6 +3,7 @@ import GPyOpt
 import numpy as np
 import logging
 import sklearn
+from sklearn.svm import SVR
 import xgboost
 from matplotlib import pyplot as plt
 from typing import Callable, Optional, Any
@@ -127,6 +128,7 @@ class HyperparametersFinder:
             y_output: np.ndarray,
             model_type: str,
             bounds: list[dict[str, Any]],
+            acquisition_type: str = 'MPI',
             f: Optional[Callable] = None,
             baseline: Optional[float] = None
     ):
@@ -151,22 +153,25 @@ class HyperparametersFinder:
                 logger.warning("Providing baseline when model_type == 'svr' is of no effect")
             self.f = self._f_svr
             self.baseline = - sklearn.model_selection.cross_val_score(
-                sklearn.svm.SVR(gamma='auto'), self.x, self.y, scoring='neg_mean_squared_error'
-                # gamma = 'auto' is needed to pass the auto-grader for some reason
-                # as expected answer relies on values from past sklearn versions
+                SVR(gamma='auto'), self.x, self.y, scoring='neg_mean_squared_error'
             ).mean()
         if model_type == 'custom':
             if f is None or baseline is None:
                 raise ValueError("f and baseline must be provided manually when model_type == 'custom'.")
             self.f = f
             self.baseline = baseline
+            
+        self.optimizer = GPyOpt.methods.BayesianOptimization(
+            f=self.f, domain=self.bounds, acquisition_type=acquisition_type, acquisition_par=0.1, exact_feval=True
+        )
+        self.model_optimized = False
 
     def _f_xgboost(self, parameters):
         parameters = parameters[0]
         score = - sklearn.model_selection.cross_val_score(
             xgboost.XGBRegressor(
                 learning_rate=parameters[0],
-                max_depth=int(parameters[2]),
+                max_depth=int(parameters[2]),  # convert to int in case it was picked up as float
                 n_estimators=int(parameters[3]),
                 gamma=int(parameters[1]),
                 min_child_weight=parameters[4]
@@ -188,5 +193,49 @@ class HyperparametersFinder:
         ).mean()
         score = np.array(score)
         return score
+
+    def optimize(self, max_iter: int, max_time: int):
+        """
+        Runs Bayesian Optimization inplace for a number 'max_iter' of iterations (after the initial exploration data)
+        :param max_iter: exploration horizon, or maximum number of acquisitions.
+        :param max_time: maximum exploration horizon in seconds.
+        :return:
+        """
+        self.optimizer.run_optimization(max_iter, max_time, verbosity=False)
+        self.model_optimized = True
+
+    @property
+    def best_parameters(self) -> dict[str, float]:
+        if not self.model_optimized:
+            raise ModelNotTrainedError("The model has not yet been trained.")
+        best_parameters = {
+            param['name']: value for param, value in zip(self.bounds, self.optimizer.X[np.argmin(self.optimizer.Y)])
+        }
+        return best_parameters
+
+    @property
+    def performance_boost(self) -> dict[str, float]:
+        if not self.model_optimized:
+            raise ModelNotTrainedError("The model has not yet been trained.")
+        return self.baseline / np.min(self.optimizer.Y)
+
+    def plot_convergence(self, show_plot: bool = False) -> plt:
+        """
+        Makes two plots to evaluate the convergence of the model:
+            plot 1: Iterations vs. distance between consecutive selected x's
+            plot 2: Iterations vs. the mean of the current model in the selected sample.
+        :param show_plot: whether to display the plot. Default: False.
+        :return: plt: the updated matplotlib.pyplot status
+        """
+        if not self.model_optimized:
+            raise ModelNotTrainedError("The model has not yet been trained, cannot plot convergence.")
+        self.optimizer.plot_convergence()
+        if show_plot:
+            plt.show()
+        return plt
+
+
+class ModelNotTrainedError(Exception):
+    pass
 
 
