@@ -1,7 +1,12 @@
 import GPy
 import GPyOpt
 import numpy as np
+import logging
+from matplotlib import pyplot as plt
 from typing import Callable, Optional
+
+
+logger = logging.getLogger(__name__)
 
 
 def generate_points(
@@ -57,3 +62,57 @@ def generate_noise(
     y = np.random.rand(*size) * noise_variance**0.5
     return x, y
 
+
+class BayesianOptimization:
+    def __init__(
+            self,
+            x_input: np.ndarray,
+            y_output: np.ndarray,
+            kernel_input_dim: int = 1,
+            kernel_variance: float = 1.5,
+            kernel_lengthscale: float = 2.0,
+            inducing_inputs: Optional[int] = None,
+            use_gpu: bool = False,
+    ):
+        self.kernel = GPy.kern.RBF(kernel_input_dim, kernel_variance, kernel_lengthscale, useGPU=use_gpu)
+        if inducing_inputs is None:
+            self.model = GPy.models.GPRegression(x_input, y_output, kernel=self.kernel)
+        else:
+            self.model = GPy.models.SparseGPRegression(
+                x_input, y_output, kernel=self.kernel, num_inducing=inducing_inputs
+            )
+            logger.warning(f"Using {inducing_inputs} inducing inputs instead of the whole dataset")
+        self.model_optimized = False
+
+    def optimize(self, max_iters: int = 1000) -> None:
+        """
+        Optimize the self.model inplace using log likelihood and log likelihood gradient, as well as the priors.
+        :param max_iters: maximum number of function evaluations. Default: 1000
+        """
+        self.model.optimize(max_iters=max_iters, ipython_notebook=False)
+        self.model_optimized = True
+
+    def predict(self, x_unseen: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Predicts the function(s) at the new unseen point(s) x_unseen. This includes the likelihood variance added to
+        the predicted underlying function
+        :param x_unseen: a column vector, or 2-dimensional array containing the inputs
+        :return: mean: the posterior mean of the output(s)
+                 variance: the posterior variance of the output(s)
+        """
+        if len(x_unseen.shape) != 2:
+            raise ValueError(
+                f"x_unseen must be a column vector and have 2 dimensions. Got {len(x_unseen.shape)} dimensions instead."
+            )
+        if not self.model_optimized:
+            logger.warning("You have not optimized / trained the model yet, therefore results might be low quality.")
+        mean, variance = self.model.predict(x_unseen)
+        return mean, variance
+
+    def plot_model(self, show_plot: bool = False) -> plt:
+        if not self.model_optimized:
+            logger.warning("You have not optimized / trained the model yet, therefore the plot might be low quality.")
+        self.model.plot()
+        if show_plot:
+            plt.show()
+        return plt
