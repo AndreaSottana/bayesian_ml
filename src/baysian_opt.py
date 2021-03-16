@@ -67,6 +67,11 @@ def generate_noise(
 
 
 class BayesianOptimizer:
+    """
+    TODO
+    A stationary RBF (Radial Basis Function kernel, aka squared-exponential, exponentiated quadratic or Gaussian)
+    kernel is used.
+    """
     def __init__(
             self,
             x_input: np.ndarray,
@@ -74,22 +79,36 @@ class BayesianOptimizer:
             kernel_input_dim: int = 1,
             kernel_variance: float = 1.5,
             kernel_lengthscale: float = 2.0,
-            inducing_inputs: Optional[int] = None,
+            num_inducing_inputs: Optional[int] = None,
             use_gpu: bool = False,
     ):
+        """
+        :param x_input: the input data; should be a one dimensional array, same length as y_output
+        :param y_output: the expected output data to use for training; should be a one dimensional array, same
+               length as x_input
+        :param kernel_input_dim: the number of dimensions ofr the RBF kernel to work on. Make sure to give the
+               tight dimensionality of inputs. You most likely want this to be the integer telling the number of
+               input dimensions of the kernel.
+        :param kernel_variance: the variance for the RBF kernel.
+        :param kernel_lengthscale: the lengthscale parameter for the RBF kernel.
+        :param num_inducing_inputs: number of samples to use as inducing inputs for training. If set to None,
+               defaults to using the whole dataset, which will be slower but more accurate. Default: None
+        :param use_gpu: whether to use GPU for kernel computations. Default: False.
+        """
         self.kernel = GPy.kern.RBF(kernel_input_dim, kernel_variance, kernel_lengthscale, useGPU=use_gpu)
-        if inducing_inputs is None:
+        if num_inducing_inputs is None:
             self.model = GPy.models.GPRegression(x_input, y_output, kernel=self.kernel)
         else:
             self.model = GPy.models.SparseGPRegression(
-                x_input, y_output, kernel=self.kernel, num_inducing=inducing_inputs
+                x_input, y_output, kernel=self.kernel, num_inducing=num_inducing_inputs
             )
-            logger.warning(f"Using {inducing_inputs} inducing inputs instead of the whole dataset")
+            logger.warning(f"Using {num_inducing_inputs} inducing inputs instead of the whole dataset")
         self.model_optimized = False
 
     def optimize(self, max_iters: int = 1000) -> None:
         """
-        Optimize the self.model inplace using log likelihood and log likelihood gradient, as well as the priors.
+        Optimizes, i.e. trains, the self.model inplace with the input data using log likelihood and log likelihood
+        gradient, as well as the priors.
         :param max_iters: maximum number of function evaluations. Default: 1000
         """
         self.model.optimize(max_iters=max_iters, ipython_notebook=False)
@@ -98,7 +117,7 @@ class BayesianOptimizer:
     def predict(self, x_unseen: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """
         Predicts the function(s) at the new unseen point(s) x_unseen. This includes the likelihood variance added to
-        the predicted underlying function
+        the predicted underlying function.
         :param x_unseen: a column vector, or 2-dimensional array containing the inputs
         :return: mean: the posterior mean of the output(s)
                  variance: the posterior variance of the output(s)
@@ -113,6 +132,12 @@ class BayesianOptimizer:
         return mean, variance
 
     def plot_model(self, show_plot: bool = False) -> plt:
+        """
+        Plots the model, including the individual training data, the predicted mean (expected value) across the domain,
+        as well as the confidence. Raises a warning is the model is plotted before being trained / optimized.
+        :param show_plot: whether to display the plot. Default: False.
+        :return: plt: the updated matplotlib.pyplot status
+        """
         if not self.model_optimized:
             logger.warning("You have not optimized / trained the model yet, therefore the plot might be low quality.")
         self.model.plot()
@@ -122,6 +147,11 @@ class BayesianOptimizer:
 
 
 class HyperparametersFinder:
+    """
+    Class to find the best values for hyper-parameters of a range of pre-defined or custom machine learning model,
+    using the Bayesian Optimization approach. Models supported out-of-the-box are XGboost and SVR.
+    TODO
+    """
     def __init__(
             self,
             x_input: np.ndarray,
@@ -132,6 +162,28 @@ class HyperparametersFinder:
             f: Optional[Callable] = None,
             baseline: Optional[float] = None
     ):
+        """
+        :param x_input: the input data; shape: (number of samples, number of input features)
+        :param y_output: the expected output data to use for training;
+               shape: (number of samples, number of output features)
+        :param model_type: the machine learning model of which you want to find the best hyper-parameters. Supported
+               values are 'xgboost', 'svr', or 'custom' for a different model.
+        :param bounds: list of dictionaries containing the description of the inputs variables, e.g. 'name', 'type'
+               (bandit, continuous, discrete), 'domain', 'dimensionality'
+               (See GPyOpt.core.task.space.Design_space class for more details).
+        :param acquisition_type:  type of acquisition function to use.
+               - 'EI', expected improvement.
+               - 'EI_MCMC', integrated expected improvement (requires GP_MCMC model).
+               - 'MPI', maximum probability of improvement.
+               - 'MPI_MCMC', maximum probability of improvement (requires GP_MCMC model).
+               - 'LCB', GP-Lower confidence bound.
+               - 'LCB_MCMC', integrated GP-Lower confidence bound (requires GP_MCMC model).
+        :param f: callable: the function to optimize. It should take 2-dimensional numpy arrays as input and return
+               2-dimensional outputs (one evaluation per row); only to be provded if model == 'custom'. For 'xgboost'
+               and 'svr' models, this function is already available inside the class and doesn't need user specification
+        :param baseline: the baseline MSE error (only to be provided if model == 'custom'). This will allow comparison
+               of MSE after hyper-parameters have been optimized.
+        """
         assert any([model_type == type_ for type_ in ('xgboost', 'svr', 'custom')]), \
             f"model_type must be one of ('xgboost', 'svr', 'custom'). Got {model_type} instead."
         self.x = x_input
@@ -146,6 +198,7 @@ class HyperparametersFinder:
             self.baseline = - sklearn.model_selection.cross_val_score(
                 xgboost.XGBRegressor(), self.x, self.y, scoring='neg_mean_squared_error'
             ).mean()
+
         elif model_type == 'svr':
             if f is not None:
                 logger.warning("Providing f when model_type == 'svr' is of no effect")
@@ -155,7 +208,8 @@ class HyperparametersFinder:
             self.baseline = - sklearn.model_selection.cross_val_score(
                 SVR(gamma='auto'), self.x, self.y, scoring='neg_mean_squared_error'
             ).mean()
-        if model_type == 'custom':
+
+        elif model_type == 'custom':
             if f is None or baseline is None:
                 raise ValueError("f and baseline must be provided manually when model_type == 'custom'.")
             self.f = f
@@ -167,6 +221,11 @@ class HyperparametersFinder:
         self.model_optimized = False
 
     def _f_xgboost(self, parameters):
+        """
+        TODO
+        :param parameters:
+        :return:
+        """
         parameters = parameters[0]
         score = - sklearn.model_selection.cross_val_score(
             xgboost.XGBRegressor(
@@ -184,6 +243,11 @@ class HyperparametersFinder:
         return score
 
     def _f_svr(self, parameters):
+        """
+        TODO
+        :param parameters:
+        :return:
+        """
         parameters = parameters[0]
         score = - sklearn.model_selection.cross_val_score(
             sklearn.svm.SVR(C=parameters[0], epsilon=parameters[1], gamma=parameters[2]),
@@ -206,6 +270,10 @@ class HyperparametersFinder:
 
     @property
     def best_parameters(self) -> dict[str, float]:
+        """
+        TODO
+        :return:
+        """
         if not self.model_optimized:
             raise ModelNotTrainedError("The model has not yet been trained.")
         best_parameters = {
@@ -215,6 +283,10 @@ class HyperparametersFinder:
 
     @property
     def performance_boost(self) -> dict[str, float]:
+        """
+        TODO
+        :return:
+        """
         if not self.model_optimized:
             raise ModelNotTrainedError("The model has not yet been trained.")
         return self.baseline / np.min(self.optimizer.Y)
@@ -236,6 +308,10 @@ class HyperparametersFinder:
 
 
 class ModelNotTrainedError(Exception):
+    """
+    Class for the error to be raised when attempting to perform some illegal operations while the model
+    has not yet been trained.
+    """
     pass
 
 
