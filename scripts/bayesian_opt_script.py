@@ -1,6 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from src.baysian_opt import generate_points, generate_noise, GaussianProcess, BayesianOptimization
+from src.bayesian_opt import generate_points, generate_noise, GaussianProcess, BayesianOptimization
 from sklearn import datasets
 
 
