@@ -41,7 +41,7 @@ if __name__ == '__main__':
 
     # Try signal with noise and using only 10 inducing inputs instead of whole dataset
     x_points, y_points = generate_points(func=np.sin, n=1000)
-    opt = BayesianOptimizer(x_points, y_points, inducing_inputs=10)
+    opt = BayesianOptimizer(x_points, y_points, num_inducing_inputs=10)
     opt.plot_model(show_plot=True)
     opt.optimize()
     opt.plot_model(show_plot=True)
