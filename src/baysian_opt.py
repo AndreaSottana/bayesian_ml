@@ -21,13 +21,13 @@ def generate_points(
         size: Optional[tuple[int]] = None
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Generates sampled points for a given function (eg. np.sin(x)) with added noise
+    Function to generate sampled points for a given function (eg. np.sin(x)) with added noise
     :param func: the callable function to generate points from. E.g. for y=np.sin(x), set func == np.sin
     :param n: the number of points to be generated. Default: 25
     :param noise_variance: the variance of the noise to be added to the generated points. Default: 0.0036
     :param low: the minimum value of x used to generate points. Default: -3.0
     :param high: the maximum value of x used to generate points. Default: 3.0
-    :param size: the shape of the returned arrays. If None, it will set it to (n, 1) (i.e. a column vector).
+    :param size: the shape of the returned arrays. If None, it will be set to (n, 1) (i.e. a column vector).
            Default: None
     :return: x: a np.ndarray with the generated x points, uniformly randomly generated between low and high parameters
              y: a np.ndarray with the generated y points, using the formula y = func(x) + random_noise where the
@@ -48,7 +48,7 @@ def generate_noise(
         size: Optional[tuple[int]] = None
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Generates random noise within a given set of values
+    Function to generate random noise within a given set of values.
     :param n: the number of noise points to be generated. Default: 25
     :param noise_variance: the variance of the noise. Default: 0.0036
     :param low: the minimum value of x used to generate points. Default: -3.0
@@ -68,9 +68,9 @@ def generate_noise(
 
 class BayesianOptimizer:
     """
-    TODO
-    A stationary RBF (Radial Basis Function kernel, aka squared-exponential, exponentiated quadratic or Gaussian)
-    kernel is used.
+    Class to fit a Gaussian Process to a simple regression problem. A stationary RBF (Radial Basis Function kernel,
+    aka squared-exponential, exponentiated quadratic or Gaussian) kernel is used. It supports the option to use
+    inducing inputs by only training the model using a small number of inputs to speed up training.
     """
     def __init__(
             self,
@@ -81,12 +81,12 @@ class BayesianOptimizer:
             kernel_lengthscale: float = 2.0,
             num_inducing_inputs: Optional[int] = None,
             use_gpu: bool = False,
-    ):
+    ) -> None:
         """
         :param x_input: the input data; should be a one dimensional array, same length as y_output
         :param y_output: the expected output data to use for training; should be a one dimensional array, same
                length as x_input
-        :param kernel_input_dim: the number of dimensions ofr the RBF kernel to work on. Make sure to give the
+        :param kernel_input_dim: the number of dimensions of the RBF kernel to work on. Make sure to give the
                tight dimensionality of inputs. You most likely want this to be the integer telling the number of
                input dimensions of the kernel.
         :param kernel_variance: the variance for the RBF kernel.
@@ -148,9 +148,9 @@ class BayesianOptimizer:
 
 class HyperparametersFinder:
     """
-    Class to find the best values for hyper-parameters of a range of pre-defined or custom machine learning model,
-    using the Bayesian Optimization approach. Models supported out-of-the-box are XGboost and SVR.
-    TODO
+    Class to find the best values for hyper-parameters of a range of pre-defined or custom machine learning models,
+    using the Bayesian Optimization approach. Models supported out-of-the-box are XGboost and SVR. The user can also
+    specify a custom model, provided the function to optimize is supplied as well.
     """
     def __init__(
             self,
@@ -161,28 +161,30 @@ class HyperparametersFinder:
             acquisition_type: str = 'MPI',
             f: Optional[Callable] = None,
             baseline: Optional[float] = None
-    ):
+    ) -> None:
         """
         :param x_input: the input data; shape: (number of samples, number of input features)
         :param y_output: the expected output data to use for training;
                shape: (number of samples, number of output features)
         :param model_type: the machine learning model of which you want to find the best hyper-parameters. Supported
-               values are 'xgboost', 'svr', or 'custom' for a different model.
+               values are 'xgboost', 'svr', or 'custom' for a different, user specified model.
         :param bounds: list of dictionaries containing the description of the inputs variables, e.g. 'name', 'type'
                (bandit, continuous, discrete), 'domain', 'dimensionality'
                (See GPyOpt.core.task.space.Design_space class for more details).
-        :param acquisition_type:  type of acquisition function to use.
+        :param acquisition_type:  type of acquisition function to use. Available values are:
                - 'EI', expected improvement.
                - 'EI_MCMC', integrated expected improvement (requires GP_MCMC model).
                - 'MPI', maximum probability of improvement.
                - 'MPI_MCMC', maximum probability of improvement (requires GP_MCMC model).
                - 'LCB', GP-Lower confidence bound.
                - 'LCB_MCMC', integrated GP-Lower confidence bound (requires GP_MCMC model).
-        :param f: callable: the function to optimize. It should take 2-dimensional numpy arrays as input and return
-               2-dimensional outputs (one evaluation per row); only to be provded if model == 'custom'. For 'xgboost'
-               and 'svr' models, this function is already available inside the class and doesn't need user specification
+        :param f: callable: the function to optimize. The function should take 2-dimensional numpy arrays as input
+               and return 2-dimensional outputs (one evaluation per row); only to be provided if model == 'custom'.
+               For 'xgboost' and 'svr' models, this function is already pre-defined inside the class and doesn't
+               require user specification.
         :param baseline: the baseline MSE error (only to be provided if model == 'custom'). This will allow comparison
-               of MSE after hyper-parameters have been optimized.
+               of MSE after hyper-parameters have been optimized. For 'xgboost' and 'srv' models, this will be
+               automatically calculated.
         """
         assert any([model_type == type_ for type_ in ('xgboost', 'svr', 'custom')]), \
             f"model_type must be one of ('xgboost', 'svr', 'custom'). Got {model_type} instead."
@@ -220,14 +222,18 @@ class HyperparametersFinder:
         )
         self.model_optimized = False
 
-    def _f_xgboost(self, parameters):
+    def _f_xgboost(self, parameters) -> np.ndarray:
         """
-        TODO
-        :param parameters:
-        :return:
+        The function to optimize for the XGboost model.
+        :param parameters: parameters (most likely a list or array of floats) corresponding to one new sampled point in
+               the hyper-parameter space, generated by the optimizer during the training process based on the
+               selected acquisition function (e.g. MPI, EI etc.)
+        :return: ndarray of float. Array of scores of the estimator for each run of the cross validation. These scores
+                 are given by the model to the new sampled point in the hyper-parameters space. The Gaussian
+                 optimization algorithm will aim to minimize these scores.
         """
         parameters = parameters[0]
-        score = - sklearn.model_selection.cross_val_score(
+        score = - sklearn.model_selection.cross_val_score(  # minus sign because we're using a minimization algorithm
             xgboost.XGBRegressor(
                 learning_rate=parameters[0],
                 max_depth=int(parameters[2]),  # convert to int in case it was picked up as float
@@ -242,14 +248,18 @@ class HyperparametersFinder:
         score = np.array(score)
         return score
 
-    def _f_svr(self, parameters):
+    def _f_svr(self, parameters) -> np.ndarray:
         """
-        TODO
-        :param parameters:
-        :return:
+        The function to optimize for the SVR model.
+        :param parameters: parameters (most likely a list or array of floats) corresponding to one new sampled point in
+               the hyper-parameter space, generated by the optimizer during the training process based on the
+               selected acquisition function (e.g. MPI, EI etc.)
+        :return: ndarray of float. Array of scores of the estimator for each run of the cross validation. These scores
+                 are given by the model to the new sampled point in the hyper-parameters space. The Gaussian
+                 optimization algorithm will aim to minimize these scores.
         """
         parameters = parameters[0]
-        score = - sklearn.model_selection.cross_val_score(
+        score = - sklearn.model_selection.cross_val_score(  # minus sign because we're using a minimization algorithm
             sklearn.svm.SVR(C=parameters[0], epsilon=parameters[1], gamma=parameters[2]),
             self.x,
             self.y,
@@ -258,12 +268,11 @@ class HyperparametersFinder:
         score = np.array(score)
         return score
 
-    def optimize(self, max_iter: int, max_time: int):
+    def optimize(self, max_iter: int, max_time: int) -> None:
         """
-        Runs Bayesian Optimization inplace for a number 'max_iter' of iterations (after the initial exploration data)
+        Runs Bayesian Optimization inplace for a number 'max_iter' of iterations (after the initial exploration stage)
         :param max_iter: exploration horizon, or maximum number of acquisitions.
         :param max_time: maximum exploration horizon in seconds.
-        :return:
         """
         self.optimizer.run_optimization(max_iter, max_time, verbosity=False)
         self.model_optimized = True
@@ -271,8 +280,9 @@ class HyperparametersFinder:
     @property
     def best_parameters(self) -> dict[str, float]:
         """
-        TODO
-        :return:
+        Property object returning the best values of the hyper-parameters tuned after running the Bayesian Optimization
+        algorithm.
+        :return: dictionary of parameters; keys: parameters' names, values: parameters' values.
         """
         if not self.model_optimized:
             raise ModelNotTrainedError("The model has not yet been trained.")
@@ -282,10 +292,10 @@ class HyperparametersFinder:
         return best_parameters
 
     @property
-    def performance_boost(self) -> dict[str, float]:
+    def performance_boost(self) -> float:
         """
-        TODO
-        :return:
+        Property object returning the performance boost compared to baseline MSE (mean squared error) after optimization
+        :return: the performance boost, expressed as a ratio between the baseline MSE and the MSE after optimization.
         """
         if not self.model_optimized:
             raise ModelNotTrainedError("The model has not yet been trained.")
@@ -294,8 +304,8 @@ class HyperparametersFinder:
     def plot_convergence(self, show_plot: bool = False) -> plt:
         """
         Makes two plots to evaluate the convergence of the model:
-            plot 1: Iterations vs. distance between consecutive selected x's
-            plot 2: Iterations vs. the mean of the current model in the selected sample.
+            plot 1: Iterations vs. distance between consecutive selected x's (points)
+            plot 2: Iterations vs. the mean of the current model (MSE) in the selected sample.
         :param show_plot: whether to display the plot. Default: False.
         :return: plt: the updated matplotlib.pyplot status
         """
