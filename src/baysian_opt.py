@@ -66,7 +66,7 @@ def generate_noise(
     return x, y
 
 
-class BayesianOptimizer:
+class GaussianProcess:
     """
     Class to fit a Gaussian Process to a simple regression problem. A stationary RBF (Radial Basis Function kernel,
     aka squared-exponential, exponentiated quadratic or Gaussian) kernel is used. It supports the option to use
@@ -146,7 +146,7 @@ class BayesianOptimizer:
         return plt
 
 
-class HyperparametersFinder:
+class BayesianOptimization:
     """
     Class to find the best values for hyper-parameters of a range of pre-defined or custom machine learning models,
     using the Bayesian Optimization approach. Models supported out-of-the-box are XGboost and SVR. The user can also

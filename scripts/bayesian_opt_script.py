@@ -1,6 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from src.baysian_opt import generate_points, generate_noise, BayesianOptimizer, HyperparametersFinder
+from src.baysian_opt import generate_points, generate_noise, GaussianProcess, BayesianOptimization
 from sklearn import datasets
 
 
@@ -19,7 +19,7 @@ if __name__ == '__main__':
     plt.show()
 
     # Try signal with noise
-    opt = BayesianOptimizer(x_points, y_points)
+    opt = GaussianProcess(x_points, y_points)
     opt.plot_model(show_plot=True)
     opt.optimize()
     opt.plot_model(show_plot=True)
@@ -28,20 +28,20 @@ if __name__ == '__main__':
     print(opt.kernel.lengthscale)
 
     # Try signal without noise
-    opt = BayesianOptimizer(x_points_no_noise, y_points_no_noise)
+    opt = GaussianProcess(x_points_no_noise, y_points_no_noise)
     opt.plot_model(show_plot=True)
     opt.optimize()
     opt.plot_model(show_plot=True)
 
     # Try noise only
-    opt = BayesianOptimizer(x_noise_only, y_noise_only)
+    opt = GaussianProcess(x_noise_only, y_noise_only)
     opt.plot_model(show_plot=True)
     opt.optimize()
     opt.plot_model(show_plot=True)
 
     # Try signal with noise and using only 10 inducing inputs instead of whole dataset
     x_points, y_points = generate_points(func=np.sin, n=1000)
-    opt = BayesianOptimizer(x_points, y_points, num_inducing_inputs=10)
+    opt = GaussianProcess(x_points, y_points, num_inducing_inputs=10)
     opt.plot_model(show_plot=True)
     opt.optimize()
     opt.plot_model(show_plot=True)
@@ -58,7 +58,7 @@ if __name__ == '__main__':
         {'name': 'n_estimators', 'type': 'discrete', 'domain': (1, 300)},
         {'name': 'min_child_weight', 'type': 'discrete', 'domain': (1, 10)}
     ]
-    hp_finder = HyperparametersFinder(data['data'], data['target'], model_type='xgboost', bounds=bounds)
+    hp_finder = BayesianOptimization(data['data'], data['target'], model_type='xgboost', bounds=bounds)
     hp_finder.optimize(max_iter=50, max_time=60)
     print("baseline MSE: ", hp_finder.baseline)
     print("Best values of hyper-parameters after optimization: ", hp_finder.best_parameters)
@@ -72,7 +72,7 @@ if __name__ == '__main__':
         {'name': 'epsilon', 'type': 'continuous', 'domain': (1e-5, 10)},
         {'name': 'gamma', 'type': 'continuous', 'domain': (1e-5, 10)}
     ]
-    hp_finder = HyperparametersFinder(data['data'], data['target'], model_type='svr', bounds=bounds)
+    hp_finder = BayesianOptimization(data['data'], data['target'], model_type='svr', bounds=bounds)
     hp_finder.optimize(max_iter=50, max_time=60)
     print("baseline MSE: ", hp_finder.baseline)
     print("Best values of hyper-parameters after optimization: ", hp_finder.best_parameters)
