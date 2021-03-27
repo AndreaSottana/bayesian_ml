@@ -25,4 +25,4 @@ out-of-the-box without the need for modification.
 NOTES: 
  - This code is written for Python 3.9 and may not work in earlier versions.
  - `tensorflow` version `1.x` is required to run some of the notebooks, but given it's not required to run modules in the
-`src` folder, I have nto included it in the `requirements.txt` file.
+`src` folder, I have not included it in the `requirements.txt` file.
